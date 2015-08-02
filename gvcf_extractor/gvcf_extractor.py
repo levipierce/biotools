@@ -58,6 +58,29 @@ class Extractor(object):
                     commands_to_process.append(cmd)
                 self.work_list.append( (work_dir, commands_to_process, self.exec_dir) )
 
+def worker(work):
+
+    work_dir = work[0]
+    top_dir = work[1]
+    commands_to_process = work[2]
+    fname = work[3]
+    fnum = work[4]
+    s3_store = work[5]
+    new_name = work[6]
+    create_work_dir(work_dir)
+    os.chdir(work_dir)
+    t0 = time.time()
+    with open('%s.log'%fnum,'w') as f:
+        for cmd in commands_to_process:
+            p = subprocess.call(cmd, shell=True)
+            f.write("%s done in %s\n"%(cmd, time.time() - t0))
+
+        vcf_filename = "features.vcf"
+        vcf_filename_new = "mod_features.vcf"
+        massage_vcf(vcf_filename, vcf_filename_new, fname, s3_store, new_name)
+
+        f.write("%s done in %s\n"%("massaging", time.time() - t0))
+    os.chdir(top_dir)
 
 def massage_vcf(vcf_filename, vcf_filename_new, fname, s3_store, new_name):
     '''
