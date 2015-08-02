@@ -18,7 +18,7 @@ def check_file_path(file_list):
 
 class Extractor(object):
     def __init__(self, sample_list, bed_file, reference, s3_store, n_tasks):
-        #Sample list should be "qc.sample_key" "vcf location"
+        #Sample list should be qc.sample_key,vcf location
         self.sample_list = sample_list
         self.bed_file = bed_file
         self.reference = reference
@@ -32,7 +32,7 @@ class Extractor(object):
         """
         worker_pool = Pool(self.n_tasks)
         the_work_list = self.get_work_list()
-        worker_pool.map(worker, self.work_list[0:4])
+        worker_pool.map(worker, self.work_list)
         worker_pool.close()
         worker_pool.join()
 
@@ -59,28 +59,26 @@ class Extractor(object):
                 self.work_list.append( (work_dir, commands_to_process, self.exec_dir) )
 
 def worker(work):
-
+    """
+    This must be outside of the class due to pickleing of an instance object
+    """
     work_dir = work[0]
-    top_dir = work[1]
-    commands_to_process = work[2]
-    fname = work[3]
-    fnum = work[4]
-    s3_store = work[5]
-    new_name = work[6]
+    commands_to_process = work[1]
+    exec_dir = work[2]
     create_work_dir(work_dir)
     os.chdir(work_dir)
     t0 = time.time()
-    with open('%s.log'%fnum,'w') as f:
+    with open('process.log','w') as f:
         for cmd in commands_to_process:
             p = subprocess.call(cmd, shell=True)
             f.write("%s done in %s\n"%(cmd, time.time() - t0))
 
         vcf_filename = "features.vcf"
         vcf_filename_new = "mod_features.vcf"
-        massage_vcf(vcf_filename, vcf_filename_new, fname, s3_store, new_name)
+        #massage_vcf(vcf_filename, vcf_filename_new, fname, s3_store, new_name)
 
         f.write("%s done in %s\n"%("massaging", time.time() - t0))
-    os.chdir(top_dir)
+    os.chdir(exec_dir)
 
 def massage_vcf(vcf_filename, vcf_filename_new, fname, s3_store, new_name):
     '''
@@ -90,13 +88,12 @@ def massage_vcf(vcf_filename, vcf_filename_new, fname, s3_store, new_name):
     '''
     with open(vcf_filename) as fh:
         data = fh.readlines()
-    name = None
+
     with open(vcf_filename_new, 'w') as fh:
         process = False
         for l in data:
             if "#CHROM" in l:
                 ls = l.split("\t")
-                #name = ls[9].strip() + "_" + hash.hexdigest()[:5]
                 header = '\t'.join(ls[:9] + [new_name])
                 fh.write("##fileformat=VCFv4.1\n")
                 fh.write(header+"\n")
@@ -116,11 +113,11 @@ def massage_vcf(vcf_filename, vcf_filename_new, fname, s3_store, new_name):
     #Changed this to process files
     #ADAM="/mnt/big_drive/adam"
     ADAM="/mnt/A/adam"
-    cmd2 = "%s/bin/adam-submit vcf2adam %s %s.adam"%(ADAM, vcf_filename_new, new_name)
-    #subprocess.call(cmd2, shell=True)
+    cmd0 = "%s/bin/adam-submit vcf2adam %s %s.adam"%(ADAM, vcf_filename_new, new_name)
+    subprocess.call(cmd0, shell=True)
 
-    cmd11 = "rm %s %s"%(vcf_filename_new, "features.vcf" )
-    #subprocess.call(cmd11, shell=True)
+    cmd1 = "rm %s %s"%(vcf_filename_new, "features.vcf" )
+    subprocess.call(cmd1, shell=True)
 
     #push_to_s3(s3_store, "%s.adam"%new_name)
     #push_to_s3(s3_store, "features.vcf")
@@ -162,7 +159,6 @@ if __name__ == "__main__":
         worker_pool = Pool(args.cores)
         
         the_work_list = get_work_list(bed_file, gvcf_list, reference, s3_store)
-        #worker_pool.map(worker, the_work_list[-8:])
         worker_pool.map(worker, the_work_list)
         worker_pool.close()
         worker_pool.join()
